@@ -4,6 +4,8 @@
 #include <fstream>
 using namespace std;
 
+
+
 class Patient {
 private:
     string name;
@@ -57,6 +59,7 @@ public:
     void viewPatients();
     void nextPatient();
     void saveInFile(const string& filename);
+    void saveAsFormattedReport(const string& file);
     void loadFromFile(const string& filename);
 };
 
@@ -246,6 +249,7 @@ void patientList::nextPatient() {
             "Headache"
         };
 
+        // Show common diseases first
         cout << "Common Diseases:\n";
         for (int i = 0; i < 5; i++) {
             cout << i + 1 << ". " << commonDiseases[i] << endl;
@@ -254,13 +258,13 @@ void patientList::nextPatient() {
         char isCommon;
         cout << "\nIs the diagnosis a common disease? (y/n): ";
         cin >> isCommon;
-        cin.ignore();
+        cin.ignore(); // <<=== FLUSH after char input
 
         if (isCommon == 'y' || isCommon == 'Y') {
             int diagChoice;
             cout << "Enter the number of the disease (1-5): ";
             cin >> diagChoice;
-            cin.ignore();
+            cin.ignore(); // <<=== FLUSH after number input
 
             if (diagChoice >= 1 && diagChoice <= 5) {
                 diagnosis = commonDiseases[diagChoice - 1];
@@ -299,7 +303,7 @@ void patientList::nextPatient() {
 }
 
 void patientList::saveInFile(const string& file) {
-    ofstream outrFile(file);
+    ofstream outrFile(file); //write mode
     if (!outrFile) {
         cout << "Error opening file for writing!" << endl;
         return;
@@ -326,6 +330,64 @@ void patientList::saveInFile(const string& file) {
     outrFile.close();
     cout << "Data saved to file successfully." << endl;
 }
+
+void patientList::saveAsFormattedReport(const string& file) {
+    ofstream outFile(file);
+    if (!outFile) {
+        cout << "Error opening file for writing!" << endl;
+        return;
+    }
+
+    outFile << "======================= Emergency Room Patients =======================\n";
+    outFile << "Total in ER: " << count << "\n";
+    outFile << "-----------------------------------------------------------------------\n";
+    outFile << "| Name           | ID     | Priority | Diagnosis     | Description     |\n";
+    outFile << "-----------------------------------------------------------------------\n";
+
+    for (int i = 0; i < count; i++) {
+        outFile << "| ";
+        outFile.width(14); outFile.setf(ios::left); outFile << heap[i].get_name();
+        outFile << "| ";
+        outFile.width(7); outFile << heap[i].get_id();
+        outFile << "| ";
+        outFile.width(9); outFile << heap[i].get_priority();
+        outFile << "| ";
+        outFile.width(14); outFile << heap[i].get_diagnosis();
+        outFile << "| ";
+        outFile.width(17); outFile << heap[i].get_description();
+        outFile << "|\n";
+    }
+
+    outFile << "-----------------------------------------------------------------------\n";
+
+    if (overflowTop >= 0) {
+        outFile << "\n========================= Overflow Patients ===========================\n";
+        outFile << "Total in Overflow: " << overflowTop + 1 << "\n";
+        outFile << "-----------------------------------------------------------------------\n";
+        outFile << "| Name           | ID     | Priority | Diagnosis     | Description     |\n";
+        outFile << "-----------------------------------------------------------------------\n";
+
+        for (int i = 0; i <= overflowTop; i++) {
+            outFile << "| ";
+            outFile.width(14); outFile.setf(ios::left); outFile << overflowStack[i].get_name();
+            outFile << "| ";
+            outFile.width(7); outFile << overflowStack[i].get_id();
+            outFile << "| ";
+            outFile.width(9); outFile << overflowStack[i].get_priority();
+            outFile << "| ";
+            outFile.width(14); outFile << overflowStack[i].get_diagnosis();
+            outFile << "| ";
+            outFile.width(17); outFile << overflowStack[i].get_description();
+            outFile << "|\n";
+        }
+
+        outFile << "-----------------------------------------------------------------------\n";
+    }
+
+    outFile.close();
+    cout << "Formatted report saved successfully." << endl;
+}
+
 
 void patientList::loadFromFile(const string& file) {
     ifstream inFile(file);
@@ -389,7 +451,8 @@ int main() {
         cout << "|-2. Remove Patient by ID" << endl;
         cout << "|-3. View All Patients" << endl;
         cout << "|-4. View Next Patient" << endl;
-        cout << "|-5. Exit" << endl;
+        cout << "|-5. Export Formatted Report\n";
+        cout << "|-6. Exit" << endl;
         cout << "-----Enter an operation to perform: ";
         cin >> choice;
 
@@ -398,7 +461,10 @@ int main() {
         case 2: er.removePatient(); break;
         case 3: er.viewPatients(); break;
         case 4: er.nextPatient(); break;
-        case 5:
+		case 5:
+			er.saveAsFormattedReport("formatted_report.txt");
+			break;
+        case 6:
             er.saveInFile("patients.txt");
             cout << "Exiting program..." << endl;
             return 0;
