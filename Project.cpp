@@ -1,208 +1,410 @@
 #include <iostream>
+#include <string>
+#include <cstdlib>
+#include <fstream>
 using namespace std;
-
-const int MAX = 10;
 
 class Patient {
 private:
     string name;
     int id;
+    int priority;
+    string diagnosis;
+    string description;
+
 public:
-    Patient() {
-        name = "Unknown";
-        id = 0;
-    }
+    Patient() : name(""), id(0), priority(0), diagnosis("Not determined"), description("---") {}
+    Patient(string name, int id, int priority) : name(name), id(id), priority(priority), diagnosis("Not determined"), description("---") {}
 
-    Patient(string name, int id) {
-        this->name = name;
-        this->id = id;
-    }
+    void set_diagnosis(string diagnosis) { this->diagnosis = diagnosis; }
+    void set_description(string description) { this->description = description; }
 
-    void new_patient(string name, int id) {
-        this->name = name;
-        this->id = id;
-    }
+    string get_name() { return name; }
+    int get_id() { return id; }
+    int get_priority() { return priority; }
+    string get_diagnosis() { return diagnosis; }
+    string get_description() { return description; }
 
-    string get_name() {
-        return name;
-    }
-
-    int get_id() {
-        return id;
+    friend ostream& operator<<(ostream& os, const Patient& p) {
+        os << "Name: " << p.name
+            << ", ID: " << p.id
+            << ", Priority: " << p.priority
+            << ", Diagnosis: " << p.diagnosis
+            << ", Description: " << p.description;
+        return os;
     }
 };
 
-class Stack {
+class patientList {
 private:
-    struct node {
-        Patient patient;
-        node* head;
-    } *top;
     int count;
+    int MAX;
+    Patient heap[10];
+    Patient overflowStack[10];
+    int overflowTop;
+
+    void heapifyUp(int index);
+    void heapifyDown(int index);
 
 public:
-    Stack() {
-        top = NULL;
-        count = 0;
-    }
+    patientList(int MAX) : count(0), MAX(MAX), overflowTop(-1) {}
 
-    void push(Patient item) {
-        if (count == MAX) {
-            cout << "Stack is full" << endl;
-            return;
-        }
-
-        node* temp = new node;
-        if (temp == NULL) {
-            cout << "Memory allocation failed" << endl;
-            return;
-        }
-
-        temp->patient = item;
-        temp->head = top;
-        top = temp;
-        count++;
-    }
-
-    Patient pop() {
-        if (top == NULL) {
-            cout << "Stack is empty" << endl;
-            return Patient();
-        }
-
-        node* temp = top;
-        Patient item = temp->patient;
-        top = top->head;
-        delete temp;
-        count--;
-
-        return item;
-    }
-
-    string get_name() {
-        if (top == NULL) {
-            cout << "Stack is empty" << endl;
-            return "";
-        }
-        return top->patient.get_name();
-    }
-
-    Patient get_with_id(int id) {
-        node* temp = top;
-        while (temp != NULL) {
-            if (temp->patient.get_id() == id) {
-                return temp->patient;
-            }
-            temp = temp->head;
-        }
-
-        cout << "Patient not found" << endl;
-        return Patient();
-    }
-
-    Patient remove_by_id(int id, bool& found) {
-        node* current = top;
-        node* prev = NULL;
-        found = false;
-
-        while (current != NULL) {
-            if (current->patient.get_id() == id) {
-                found = true;
-                if (prev == NULL) {
-                    top = current->head;
-                }
-                else {
-                    prev->head = current->head;
-                }
-
-                Patient p = current->patient;
-                delete current;
-                count--;
-                return p;
-            }
-
-            prev = current;
-            current = current->head;
-        }
-
-        return Patient();
-    }
+    void addToOverflow(Patient p);
+    void manageOverFlow();
+    void addPatient();
+    void removePatient();
+	void removePatient(int id);
+    void viewPatients();
+    void nextPatient();
+    void saveInFile(const string& filename);
+    void loadFromFile(const string& filename);
 };
 
-void new_patient(Stack& stack) {
-    string name;
-    int id;
-    cout << "Enter patient name: ";
-    cin >> name;
-    cout << "Enter patient ID: ";
-    cin >> id;
-    Patient p(name, id);
-    stack.push(p);
+void patientList::heapifyUp(int index) {
+    while (index > 0) {
+        int parent = (index - 1) / 2;
+        if (heap[index].get_priority() < heap[parent].get_priority()) {
+            swap(heap[index], heap[parent]);
+            index = parent;
+        }
+        else {
+            break;
+        }
+    }
 }
 
-void move_patient(Stack& stack, Patient normal_patients[], int& count) {
-    if (count >= MAX) {
-        cout << "No space to move patient out of emergency." << endl;
+void patientList::heapifyDown(int index) {
+    while (2 * index + 1 < count) {
+        int left = 2 * index + 1;
+        int right = 2 * index + 2;
+        int smallest = index;
+
+        if (heap[left].get_priority() < heap[smallest].get_priority())
+            smallest = left;
+        if (right < count && heap[right].get_priority() < heap[smallest].get_priority())
+            smallest = right;
+
+        if (smallest != index) {
+            swap(heap[index], heap[smallest]);
+            index = smallest;
+        }
+        else {
+            break;
+        }
+    }
+}
+
+void patientList::addToOverflow(Patient p) {
+    if (overflowTop < 9) {
+        overflowTop++;
+        overflowStack[overflowTop] = p;
+        cout << "Patient added to overflow." << endl;
+    }
+    else {
+        cout << "Overflow stack is full!! Cannot add more patients." << endl;
+    }
+}
+
+void patientList::manageOverFlow() {
+    if (overflowTop == -1) return;
+
+    cout << "Adding a patient from overflow to the ER..." << endl;
+    Patient overflowPatient = overflowStack[overflowTop];
+    overflowTop--;
+    heap[count++] = overflowPatient;
+    heapifyUp(count - 1);
+    cout << "Patient added from overflow to the ER." << endl;
+}
+
+void patientList::addPatient() {
+    string name;
+    int id, priority;
+
+    cout << "Enter patient name: ";
+    cin.ignore();
+    getline(cin, name);
+
+    cout << "Enter ID: ";
+    cin >> id;
+
+    while (true) {
+        cout << "Enter priority (1 being most urgent and 5 being least): ";
+        cin >> priority;
+        if (priority >= 1 && priority <= 5) break;
+        else cout << "Invalid priority level!! Try again..." << endl;
+    }
+
+    Patient p(name, id, priority);
+
+    if (count == MAX) {
+        cout << "Emergency Room is Full!! Adding to overflow..." << endl;
+        addToOverflow(p);
+        return;
+    }
+
+    heap[count++] = p;
+    heapifyUp(count - 1);
+    cout << "Patient added successfully!!!!" << endl;
+}
+
+void patientList::removePatient() {
+    if (count == 0) {
+        cout << "No patients to remove." << endl;
         return;
     }
 
     int id;
-    cout << "Enter the ID of the patient to move: ";
+    cout << "Enter ID of patient to remove: ";
     cin >> id;
 
-    bool found = false;
-    Patient p = stack.remove_by_id(id, found);
-    if (found) {
-        normal_patients[count] = p;
-        count++;
-        cout << "Patient moved out of emergency room: " << p.get_name() << endl;
+    int index = -1;
+    for (int i = 0; i < count; i++) {
+        if (heap[i].get_id() == id) {
+            index = i;
+            break;
+        }
+    }
+
+    if (index == -1) {
+        cout << "Patient not found." << endl;
+        return;
+    }
+
+    count--;
+    heap[index] = heap[count];
+    heapifyDown(index);
+    manageOverFlow();
+    cout << "Patient removed." << endl;
+}
+void patientList::removePatient(int id) {
+    if (count == 0) {
+        cout << "No patients to remove." << endl;
+        return;
+    }
+
+    int index = -1;
+    for (int i = 0; i < count; i++) {
+        if (heap[i].get_id() == id) {
+            index = i;
+            break;
+        }
+    }
+
+    if (index == -1) {
+        cout << "Patient not found." << endl;
+        return;
+    }
+
+    count--;
+    heap[index] = heap[count];
+    heapifyDown(index);
+    manageOverFlow();
+    cout << "Patient removed." << endl;
+}
+
+void patientList::viewPatients() {
+    if (count == 0) {
+        cout << "Emergency Room is Empty" << endl;
     }
     else {
-        cout << "Patient with ID " << id << " not found in emergency room." << endl;
+        cout << "There are " << count << " patients in the ER:" << endl;
+        for (int i = 0; i < count; i++) {
+            cout << heap[i] << endl;
+        }
+    }
+
+    if (overflowTop != -1) {
+        cout << "There are " << overflowTop + 1 << " overflow patients:" << endl;
+        for (int i = 0; i <= overflowTop; i++) {
+            cout << overflowStack[i] << endl;
+        }
     }
 }
 
-void get_patient_info(Stack& stack) {
-    int id;
-    cout << "Enter patient ID: ";
-    cin >> id;
-    Patient p = stack.get_with_id(id);
-    cout << "Patient name: " << p.get_name() << endl;
-    cout << "Patient ID: " << p.get_id() << endl;
+void patientList::nextPatient() {
+    if (count == 0) {
+        cout << "No patients in the emergency room." << endl;
+        return;
+    }
+
+    Patient& p = heap[0];
+    cout << "Next patient (most urgent):" << endl;
+    cout << p << endl;
+
+    int choice;
+    cout << "1. Evaluate\n2. Exit to main menu\nChoose: ";
+    cin >> choice;
+
+    if (choice == 1) {
+        string diagnosis, description;
+
+        string commonDiseases[5] = {
+            "Flu",
+            "Fracture",
+            "Infection",
+            "Heart Attack",
+            "Headache"
+        };
+
+        cout << "Common Diseases:\n";
+        for (int i = 0; i < 5; i++) {
+            cout << i + 1 << ". " << commonDiseases[i] << endl;
+        }
+
+        char isCommon;
+        cout << "\nIs the diagnosis a common disease? (y/n): ";
+        cin >> isCommon;
+        cin.ignore();
+
+        if (isCommon == 'y' || isCommon == 'Y') {
+            int diagChoice;
+            cout << "Enter the number of the disease (1-5): ";
+            cin >> diagChoice;
+            cin.ignore();
+
+            if (diagChoice >= 1 && diagChoice <= 5) {
+                diagnosis = commonDiseases[diagChoice - 1];
+            }
+            else {
+                cout << "Invalid choice. Enter diagnosis manually: ";
+                getline(cin, diagnosis);
+            }
+        }
+        else {
+            cout << "Enter diagnosis manually: ";
+            getline(cin, diagnosis);
+        }
+
+        cout << "Enter description: ";
+        getline(cin, description);
+
+        p.set_diagnosis(diagnosis);
+        p.set_description(description);
+        cout << "Patient evaluated." << endl;
+
+		cout << "Do you want to remove this patient from the ER? (y/n): ";
+		char removeChoice;
+		cin >> removeChoice;
+		if (removeChoice == 'y' || removeChoice == 'Y') {
+			removePatient(heap[0].get_id());
+		}
+	}
+	else if (choice == 2) {
+		cout << "Returning to main menu..." << endl;
+	}
+	else {
+		cout << "Invalid choice. Returning to main menu..." << endl;
+
+    }
+}
+
+void patientList::saveInFile(const string& file) {
+    ofstream outrFile(file);
+    if (!outrFile) {
+        cout << "Error opening file for writing!" << endl;
+        return;
+    }
+
+    outrFile << count << endl;
+    for (int i = 0; i < count; i++) {
+        outrFile << heap[i].get_name() << " "
+            << heap[i].get_id() << " "
+            << heap[i].get_priority() << endl
+            << heap[i].get_diagnosis() << endl
+            << heap[i].get_description() << endl << endl;
+    }
+
+    outrFile << overflowTop + 1 << endl;
+    for (int i = 0; i <= overflowTop; i++) {
+        outrFile << overflowStack[i].get_name() << " "
+            << overflowStack[i].get_id() << " "
+            << overflowStack[i].get_priority() << endl
+            << overflowStack[i].get_diagnosis() << endl
+            << overflowStack[i].get_description() << endl << endl;
+    }
+
+    outrFile.close();
+    cout << "Data saved to file successfully." << endl;
+}
+
+void patientList::loadFromFile(const string& file) {
+    ifstream inFile(file);
+    if (!inFile) {
+        cout << " Sorry no saved data found. " << endl;
+        return;
+    }
+
+    count = 0;
+    overflowTop = -1;
+
+    int heapCount;
+    inFile >> heapCount;
+    inFile.ignore();
+
+    for (int i = 0; i < heapCount; i++) {
+        string name, diagnosis, description;
+        int id, priority;
+
+        inFile >> name >> id >> priority;
+        inFile.ignore();
+        getline(inFile, diagnosis);
+        getline(inFile, description);
+        Patient p(name, id, priority);
+        p.set_diagnosis(diagnosis);
+        p.set_description(description);
+        heap[count++] = p;
+    }
+
+    int overflowCount;
+    inFile >> overflowCount;
+    inFile.ignore();
+
+    for (int i = 0; i < overflowCount; i++) {
+        string name, diagnosis, description;
+        int id, priority;
+        inFile >> name >> id >> priority;
+        inFile.ignore();
+        getline(inFile, diagnosis);
+        getline(inFile, description);
+        Patient p(name, id, priority);
+        p.set_diagnosis(diagnosis);
+        p.set_description(description);
+        overflowStack[++overflowTop] = p;
+    }
+
+    inFile.close();
+    cout << "Data loaded from file successfully." << endl;
 }
 
 int main() {
-    Stack stack;
-    Patient normal_patients[MAX];
-    int count = 0;
+    patientList er(10);
+    int choice;
 
-    cout << "Welcome to the Emergency Room" << endl;
+    er.loadFromFile("patients.txt");
 
     while (true) {
-        cout << "\nPlease select an option:" << endl;
-        cout << "1: New Patient" << endl;
-        cout << "2: Move Patient out of emergency room (by ID)" << endl;
-        cout << "3: Get Patient Information" << endl;
-        cout << "4: Exit" << endl;
-
-        int choice;
+        system("cls");
+        cout << "========= Emergency Room Patient Management System =========" << endl;
+        cout << "|-1. Add New Patient" << endl;
+        cout << "|-2. Remove Patient by ID" << endl;
+        cout << "|-3. View All Patients" << endl;
+        cout << "|-4. View Next Patient" << endl;
+        cout << "|-5. Exit" << endl;
+        cout << "-----Enter an operation to perform: ";
         cin >> choice;
 
         switch (choice) {
-        case 1:
-            new_patient(stack);
-            break;
-        case 2:
-            move_patient(stack, normal_patients, count);
-            break;
-        case 3:
-            get_patient_info(stack);
-            break;
-        case 4:
-            cout << "Exiting program." << endl;
+        case 1: er.addPatient(); break;
+        case 2: er.removePatient(); break;
+        case 3: er.viewPatients(); break;
+        case 4: er.nextPatient(); break;
+        case 5:
+            er.saveInFile("patients.txt");
+            cout << "Exiting program..." << endl;
             return 0;
         default:
-            cout << "Invalid option. Please try again." << endl;
+            cout << "Invalid choice!!! Try again..." << endl;
         }
+        system("pause");
     }
 }
